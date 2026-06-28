@@ -1,0 +1,90 @@
+name: Build & Sign APK
+
+on:
+  push:
+    branches: [ main, master ]
+    tags: [ 'v*' ]
+  workflow_dispatch:
+
+permissions:
+  contents: write   # needed to attach the APK to a GitHub Release on tags
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java (JDK 17)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install JS dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install SDK packages
+        run: |
+          yes | sdkmanager "platform-tools" "platforms;android-30" "build-tools;30.0.3" >/dev/null
+          yes | sdkmanager --licenses >/dev/null || true
+
+      - name: Sync Capacitor web assets
+        run: npx cap sync android
+
+      - name: Build release APK (unsigned)
+        run: |
+          chmod +x android/gradlew
+          cd android
+          ./gradlew assembleRelease --no-daemon --stacktrace
+
+      - name: Zipalign & sign
+        id: sign
+        env:
+          KS_B64:    ${{ secrets.KEYSTORE_BASE64 }}
+          KS_PASS:   ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASS:  ${{ secrets.KEY_PASSWORD }}
+        run: |
+          set -e
+          BT="$(ls -d $ANDROID_SDK_ROOT/build-tools/30.0.3)"
+          UNSIGNED="android/app/build/outputs/apk/release/app-release-unsigned.apk"
+
+          if [ -z "$KS_B64" ]; then
+            echo "::warning::No KEYSTORE_BASE64 secret set — producing a DEBUG-signed APK instead."
+            cd android && ./gradlew assembleDebug --no-daemon
+            cp app/build/outputs/apk/debug/app-debug.apk "$GITHUB_WORKSPACE/monero-key-tool.apk"
+            exit 0
+          fi
+
+          echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          "$BT/zipalign" -f -p 4 "$UNSIGNED" "$RUNNER_TEMP/aligned.apk"
+          "$BT/apksigner" sign \
+            --ks "$RUNNER_TEMP/release.jks" --ks-key-alias "$KEY_ALIAS" \
+            --ks-pass pass:"$KS_PASS" --key-pass pass:"$KEY_PASS" \
+            --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true \
+            --out monero-key-tool.apk "$RUNNER_TEMP/aligned.apk"
+          "$BT/apksigner" verify --verbose monero-key-tool.apk
+          rm -f "$RUNNER_TEMP/release.jks"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: monero-key-tool-apk
+          path: monero-key-tool.apk
+          if-no-files-found: error
+
+      - name: Attach APK to GitHub Release (on tags)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: monero-key-tool.apk
