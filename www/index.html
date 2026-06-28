@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Monero Seed → Keys (Offline)</title>
+<style>
+  :root{
+    --bg:#0d0f12; --panel:#15191f; --panel2:#1c222b; --line:#2a323d;
+    --txt:#e7edf3; --mut:#8c98a6; --accent:#ff6a3d; --accent2:#4cc2a3; --warn:#ffcc66;
+    --mono:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);
+    font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+    line-height:1.5;-webkit-text-size-adjust:100%}
+  .wrap{max-width:780px;margin:0 auto;padding:22px 18px 60px}
+  header h1{font-size:21px;margin:0 0 2px;letter-spacing:-.2px}
+  header h1 b{color:var(--accent)}
+  .sub{color:var(--mut);font-size:13px;margin-bottom:18px}
+  .pill{display:inline-block;font-size:11px;font-weight:600;letter-spacing:.4px;
+    text-transform:uppercase;color:#0d0f12;background:var(--accent2);
+    padding:3px 9px;border-radius:999px;margin-left:6px;vertical-align:middle}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;
+    padding:18px;margin-bottom:16px}
+  label{display:block;font-size:13px;color:var(--mut);margin:0 0 7px}
+  textarea{width:100%;min-height:96px;resize:vertical;background:var(--panel2);
+    color:var(--txt);border:1px solid var(--line);border-radius:10px;padding:12px 13px;
+    font-family:var(--mono);font-size:14px;outline:none}
+  textarea:focus{border-color:var(--accent)}
+  .row{display:flex;gap:12px;flex-wrap:wrap;align-items:end;margin-top:13px}
+  select{background:var(--panel2);color:var(--txt);border:1px solid var(--line);
+    border-radius:10px;padding:11px 12px;font-size:14px;outline:none}
+  button.go{flex:1;min-width:160px;background:var(--accent);color:#160a05;border:none;
+    border-radius:10px;padding:13px 18px;font-size:15px;font-weight:700;cursor:pointer;
+    transition:transform .06s ease,opacity .2s ease}
+  button.go:active{transform:translateY(1px)}
+  button.go:disabled{opacity:.5;cursor:wait}
+  .status{font-size:13px;color:var(--mut);margin-top:11px;min-height:18px}
+  .status.err{color:#ff7a6b}
+  .results{display:none}
+  .field{margin-bottom:11px}
+  .field .k{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--mut);
+    margin-bottom:4px;display:flex;justify-content:space-between;align-items:center}
+  .field .k .tag{color:var(--accent2);font-weight:700}
+  .valbox{display:flex;gap:8px;align-items:stretch}
+  .val{flex:1;background:var(--panel2);border:1px solid var(--line);border-radius:9px;
+    padding:10px 12px;font-family:var(--mono);font-size:13px;word-break:break-all;
+    user-select:all}
+  .copy{background:transparent;border:1px solid var(--line);color:var(--mut);
+    border-radius:9px;padding:0 13px;cursor:pointer;font-size:12px;white-space:nowrap}
+  .copy:hover{border-color:var(--accent2);color:var(--accent2)}
+  .copy.done{color:var(--accent2);border-color:var(--accent2)}
+  .warn{background:rgba(255,204,102,.08);border:1px solid rgba(255,204,102,.35);
+    color:var(--warn);border-radius:12px;padding:13px 15px;font-size:13px;margin-bottom:16px}
+  .warn b{color:#ffe0a3}
+  .net-badge{font-family:var(--mono);font-size:12px;color:var(--mut)}
+  footer{color:var(--mut);font-size:12px;text-align:center;margin-top:26px;line-height:1.7}
+  .priv .val{border-color:rgba(255,106,61,.4)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Monero Seed → Keys <b>·</b> Offline<span class="pill">runs locally</span></h1>
+    <div class="sub">Paste a <b>13-word</b> (MyMonero) or <b>25-word</b> mnemonic to reveal its private keys &amp; address — then import those into any wallet via keys.</div>
+  </header>
+
+  <div class="warn">
+    🔒 <b>Use offline.</b> This page does all crypto in your browser/device — nothing is sent anywhere.
+    For maximum safety, turn off Wi‑Fi/data while using it. Your private spend key controls your funds —
+    never share it or paste it into a website you don't trust.
+  </div>
+
+  <div class="card">
+    <label for="mnem">Mnemonic seed phrase</label>
+    <textarea id="mnem" data-testid="mnemonic-input" placeholder="word1 word2 word3 … (13 or 25 words, separated by spaces)" autocomplete="off" autocapitalize="none" spellcheck="false"></textarea>
+    <div class="row">
+      <div>
+        <label for="net" style="margin-bottom:4px">Network</label>
+        <select id="net" data-testid="network-select">
+          <option value="0">Mainnet</option>
+          <option value="1">Testnet</option>
+          <option value="2">Stagenet</option>
+        </select>
+      </div>
+      <button class="go" id="derive" data-testid="derive-btn" disabled>Loading engine…</button>
+    </div>
+    <div class="status" id="status" data-testid="status"></div>
+  </div>
+
+  <div class="card results" id="results" data-testid="results">
+    <div class="field">
+      <div class="k">Public Address <span class="net-badge" id="netlabel"></span></div>
+      <div class="valbox"><div class="val" id="address" data-testid="out-address"></div><button class="copy" data-copy="address">Copy</button></div>
+    </div>
+    <div class="field priv">
+      <div class="k">Private Spend Key <span class="tag">secret — controls funds</span></div>
+      <div class="valbox"><div class="val" id="privspend" data-testid="out-privspend"></div><button class="copy" data-copy="privspend">Copy</button></div>
+    </div>
+    <div class="field priv">
+      <div class="k">Private View Key <span class="tag">secret</span></div>
+      <div class="valbox"><div class="val" id="privview" data-testid="out-privview"></div><button class="copy" data-copy="privview">Copy</button></div>
+    </div>
+    <div class="field">
+      <div class="k">Public Spend Key</div>
+      <div class="valbox"><div class="val" id="pubspend" data-testid="out-pubspend"></div><button class="copy" data-copy="pubspend">Copy</button></div>
+    </div>
+    <div class="field">
+      <div class="k">Public View Key</div>
+      <div class="valbox"><div class="val" id="pubview" data-testid="out-pubview"></div><button class="copy" data-copy="pubview">Copy</button></div>
+    </div>
+    <div class="field" id="restoreheight-wrap" style="display:none"></div>
+  </div>
+
+  <footer>
+    Powered by the audited <b>mymonero-core</b> WebAssembly engine (same crypto the MyMonero app uses).<br/>
+    100% offline · no analytics · no network calls.
+  </footer>
+</div>
+
+<script src="keytool.bundle.js"></script>
+<script>
+(function(){
+  var $=function(id){return document.getElementById(id)};
+  var btn=$('derive'), status=$('status'), results=$('results');
+  function setStatus(msg,isErr){status.textContent=msg||'';status.className='status'+(isErr?' err':'')}
+
+  // enable button once the wasm engine is ready
+  if(window.__coreReady){
+    window.__coreReady.then(function(){btn.disabled=false;btn.textContent='Derive keys';setStatus('Engine ready. Paste your seed above.');})
+      .catch(function(e){setStatus('Failed to load crypto engine: '+e,true)});
+  } else {
+    setStatus('Engine script not loaded.',true);
+  }
+
+  function show(d,net){
+    $('address').textContent=d.address_string||'';
+    $('privspend').textContent=d.sec_spendKey_string||'';
+    $('privview').textContent=d.sec_viewKey_string||'';
+    $('pubspend').textContent=d.pub_spendKey_string||'';
+    $('pubview').textContent=d.pub_viewKey_string||'';
+    $('netlabel').textContent=({"0":"(mainnet)","1":"(testnet)","2":"(stagenet)"})[net]||'';
+    results.style.display='block';
+  }
+
+  btn.addEventListener('click',function(){
+    var m=$('mnem').value.trim();
+    var net=parseInt($('net').value,10);
+    if(!m){setStatus('Please paste a seed phrase first.',true);return}
+    var words=m.split(/\s+/).length;
+    if(words!==13 && words!==25){
+      setStatus('Expected 13 or 25 words — you pasted '+words+'. Check the phrase.',true);return
+    }
+    setStatus('Deriving…');results.style.display='none';btn.disabled=true;
+    window.deriveFromMnemonic(m,net).then(function(d){
+      show(d,String(net));setStatus('Done. Keys derived locally.');btn.disabled=false;
+    }).catch(function(e){
+      setStatus('Error: '+(e&&e.message?e.message:e),true);btn.disabled=false;
+    });
+  });
+
+  document.addEventListener('click',function(ev){
+    var b=ev.target.closest('.copy');if(!b)return;
+    var el=$(b.getAttribute('data-copy'));if(!el)return;
+    var txt=el.textContent;
+    var done=function(){var o=b.textContent;b.textContent='Copied';b.classList.add('done');
+      setTimeout(function(){b.textContent=o;b.classList.remove('done')},1200)};
+    if(navigator.clipboard&&navigator.clipboard.writeText){
+      navigator.clipboard.writeText(txt).then(done,function(){fallback()})
+    } else {fallback()}
+    function fallback(){var t=document.createElement('textarea');t.value=txt;document.body.appendChild(t);
+      t.select();try{document.execCommand('copy')}catch(e){}document.body.removeChild(t);done()}
+  });
+})();
+</script>
+</body>
+</html>

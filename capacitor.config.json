@@ -1,0 +1,6 @@
+{
+  "appId": "com.offline.monerokeytool",
+  "appName": "Monero Key Tool",
+  "webDir": "www",
+  "bundledWebRuntime": false
+}
